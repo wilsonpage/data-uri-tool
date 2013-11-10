@@ -1,0 +1,302 @@
+ <!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Base64</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      border: 0;
+      line-height: 1;
+      font-weight: normal;
+      font-size: inherit;
+      -moz-box-sizing: border-box;
+           box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      background: #eee;
+      color: #444;
+    }
+
+    body {
+      padding: 2rem;
+      font: 1rem/1 'helvetica';
+    }
+
+    li {
+      display: flex;
+      height: 3.7rem;
+      margin-bottom: 1rem;
+      font-size: 1.2rem;
+      border-radius: 3px;
+      background: #fefefe;
+      list-style-type: none;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+
+    li h2 {
+      padding: 0 1rem;
+      line-height: 4rem;
+    }
+
+    li div {
+      flex: 1;
+      position: relative;
+      padding: 0 0.5rem;
+      line-height: 4rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      opacity: 0.25;
+    }
+
+    li button {
+      background: #E58663;
+      padding: 0 0.8rem;
+      color: #fff;
+      font-size: 1.3rem;
+      font-weight: bold;
+      line-height: 10px;
+      cursor: pointer;
+    }
+
+    li button:hover {
+      background: #e39578;
+    }
+
+    li input {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 98%;
+      height: 1.8rem;
+      margin-top: -0.9rem;
+      font-family: inherit;
+      line-height: inherit;
+      background: none repeat scroll 0% 0% transparent;
+      color: transparent;
+    }
+
+    .instruction {
+      position: absolute;
+      left: 0; top: 50%;
+      width: 100%;
+      margin-top: -3rem;
+      text-align: center;
+      font-size: 5rem;
+      color: #ddd;
+      opacity: 0.5;
+      text-shadow:
+        -1px -1px 0 rgba(0,0,0,0.3),
+        1px 1px 0 rgba(255,255,255, 0.9);
+    }
+
+    ::-moz-selection {
+      background: rgba(0,0,0,0.3); /* Firefox */
+    }
+
+  </style>
+</head>
+<body>
+  <!-- <input id="file-input" type="file" multiple /> -->
+  <ul></ul>
+  <div class="instruction">Drop files here</div>
+<script>
+  var store = (function(exports) {
+    var hasDB = 'indexedDB' in window;
+    var db;
+
+    exports.open = function(done) {
+      var req = indexedDB.open('store', 3);
+
+      req.onupgradeneeded = function(e) {
+        var _db = e.target.result;
+        console.log("Upgrading...");
+
+        if(!_db.objectStoreNames.contains('files')) {
+          _db.createObjectStore('files', { autoIncrement: true });
+        }
+      };
+
+      req.onsuccess = function(e) {
+        console.log("Success!");
+        db = e.target.result;
+        done();
+      };
+
+      req.onerror = function(e) {
+        console.log('indexedDB error');
+        console.dir(e);
+      };
+    }
+
+    exports.add = function(data, done) {
+      var transaction = db.transaction(['files'], 'readwrite');
+      var store = transaction.objectStore('files');
+      var req = store.add(data);
+
+      req.onerror = function(e) {
+        console.log("Error",e.target.error.name);
+      }
+
+      req.onsuccess = function(e) {
+        done(e.target.result);
+      }
+    };
+
+    exports.delete = function(id) {
+      var transaction = db.transaction(['files'], 'readwrite');
+      var store = transaction.objectStore('files');
+      var req = store.delete(id);
+
+      req.onerror = function(e) {
+        console.log("Error",e.target.error.name);
+      }
+
+      req.onsuccess = function(e) {
+        console.log("Woot! Deleted", id);
+      }
+    };
+
+    exports.get = function(done) {
+      var transaction = db.transaction(['files'], 'readonly');
+      var objectStore = transaction.objectStore('files');
+      var cursor = objectStore.openCursor();
+      var result = [];
+
+      cursor.onsuccess = function(e) {
+        var res = e.target.result;
+        if (!res) return done(result);
+
+        res.value.id = res.key;
+        result.push(res.value);
+        res.continue();
+      }
+    };
+
+    return exports;
+  })({});
+
+  (function() {
+    var list = $('ul');
+    var body = document.body;
+    var slice = [].slice;
+
+    bind(body, 'dragenter', onDragEnter);
+    bind(body, 'dragover', onDragLeave);
+    bind(body, 'drop', onDrop);
+
+    on('click', 'js-delete', function(e, el) {
+      e.stopImmediatePropagation();
+      var item = el.parentNode;
+      var id = Number(item.getAttribute('data-id'));
+
+      item.parentNode.removeChild(item);
+      store.delete(id);
+    });
+
+    on('click', 'js-item', function(e, el) {
+      var input = $('input', el);
+      input.select();
+    });
+
+    store.open(function() {
+      store.get(function(result){
+        result.forEach(append);
+      });
+    });
+
+    function onDragEnter(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      console.log('sfvsfb');
+    }
+
+    function onDragLeave(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      console.log('onDragLeave');
+
+    }
+
+    function onDrop(e) {
+      e.stopPropagation();
+      e.preventDefault();
+
+      var data = e.dataTransfer;
+      var files = slice.call(data.files);
+      files.forEach(handleFile);
+    }
+
+    function onFileInputChange(e) {
+      var files = slice.call(fileInput.files);
+      files.forEach(handleFile);
+    }
+
+    function handleFile(file) {
+      var reader = new FileReader();
+      var name = file.name;
+      var size = file.size;
+
+      reader.onload = function(e) {
+        var uri = e.target.result;
+        var data = {
+          name: name,
+          size: size,
+          uri: uri
+        }
+
+
+        store.add(data, function(id) {
+          data.id = id;
+          append(data);
+        });
+      };
+
+      reader.readAsDataURL(file);
+    }
+
+    function append(data) {
+      var el = document.createElement('li');
+      el.className = 'js-item';
+      el.setAttribute('data-id', data.id);
+      el.innerHTML = template(data);
+      list.appendChild(el);
+      return el;
+    }
+
+    function template(data) {
+      var trimmed = data.uri.slice(0, 100);
+      return '<h2>' + data.name + '</h2>' +
+      '<div>' + trimmed + '<input type="text" readonly="readonly" value="' + data.uri + '"/></div>' +
+      '<button class="js-delete">×</button>'
+    }
+
+    function bind(el, name, fn) {
+      el.addEventListener(name, fn);
+    }
+
+    function $(q, root) {
+      root = root || document;
+      return root.querySelector(q);
+    }
+
+    function on(name, cls, fn) {
+      var root = document.body;
+      bind(root, name, function(e) {
+        var target = e.target;
+        while (target && target !== root) {
+          if (target.classList.contains(cls)) return fn(e, target);
+          else target = target.parentNode;
+        }
+      });
+    }
+  })();
+</script>
+</body>
+</html>
